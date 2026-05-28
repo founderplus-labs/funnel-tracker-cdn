@@ -1,0 +1,7 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "funnel-tracker-cdn",
+  "main": "worker.js",
+  "account_id": "e03288d14b9b9b49d5ab291fc7f2db0b",
+  "compatibility_date": "2026-02-24"
+}

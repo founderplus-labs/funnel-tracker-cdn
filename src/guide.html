@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Founder+ CLI & Funnel Toolkit — Panduan</title>
+    <meta name="description" content="Install Founder+ CLI, pakai agent-skills siap pakai, panduan bisnis, scaffold app, dan funnel toolkit (checkout + countdown) dari cdn.founderplus.id." />
+    <style>
+      :root { --p: #7f2dbf; --ink: #231838; }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: #faf9fb; color: var(--ink); font-family: system-ui, -apple-system, sans-serif; line-height: 1.65; }
+      .wrap { max-width: 760px; margin: 0 auto; padding: 56px 22px 80px; }
+      h1 { font-size: clamp(28px, 5vw, 40px); line-height: 1.15; margin: 0 0 8px; }
+      .sub { color: #5b5470; font-size: 18px; margin: 0 0 36px; }
+      h2 { font-size: 22px; margin: 40px 0 8px; }
+      p { margin: 8px 0; }
+      pre { background: #231838; color: #f3eefa; padding: 16px 18px; border-radius: 14px; overflow-x: auto; font-size: 14px; line-height: 1.6; }
+      code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+      :not(pre) > code { background: #efe7fa; color: var(--p); padding: 1px 6px; border-radius: 6px; font-size: 0.9em; }
+      a { color: var(--p); }
+      ul { padding-left: 20px; }
+      li { margin: 4px 0; }
+      .foot { margin-top: 48px; padding-top: 20px; border-top: 1px solid #e7e2ef; color: #8a8397; font-size: 13px; }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <h1>Founder+ CLI &amp; Funnel Toolkit</h1>
+      <p class="sub">Bangun, jual, dan kelola produk digital dari terminal — plus toolkit funnel (checkout, countdown) buat halaman jualanmu.</p>
+
+      <h2>1. Install Founder+ CLI</h2>
+      <p>Satu perintah (macOS / Linux):</p>
+      <pre><code>curl -fsSL https://academy.founderplus.id/install.sh | sh</code></pre>
+      <p>Windows (PowerShell):</p>
+      <pre><code>irm https://academy.founderplus.id/install.ps1 | iex</code></pre>
+      <p>Lalu login (token dari <a href="https://academy.founderplus.id/creator/tokens">creator/tokens</a>):</p>
+      <pre><code>fp login
+fp whoami</code></pre>
+
+      <h2>2. Agent-skills siap pakai</h2>
+      <p>Skill = pengetahuan buat AI agent (Claude Code, Cursor) ngerjain tugas bisnis. Browse + install:</p>
+      <pre><code>fp skills list
+fp skills search marketing
+fp skills install mulai-jualan        # ke ~/.claude/skills
+fp skills update                      # refresh yang berubah</code></pre>
+      <p>Contoh skill: <code>mulai-jualan</code>, <code>hitung-harga</code>, <code>strategi-marketing</code>, <code>validasi-ide</code>, <code>founderplus-operator</code>.</p>
+
+      <h2>3. Panduan bisnis</h2>
+      <p>Panduan fitur + tutorial step-by-step Creator Studio:</p>
+      <pre><code>fp guidance                 # overview fitur + tutorial
+fp guidance tutorials       # daftar tutorial
+fp guidance open buat-kupon # buka tutorial di browser</code></pre>
+      <p>Plus artikel bisnis buat riset:</p>
+      <pre><code>fp articles search "funnel"
+fp catalog                  # semua yang Founder+ sediakan</code></pre>
+
+      <h2>4. Scaffold app (auth + checkout, no payment code)</h2>
+      <pre><code>fp new --list
+fp new my-app --template fp-fullstack   # TanStack / Astro / Next / Hono / static / AI Studio</code></pre>
+      <p>Semua template ke-wire ke login Founder+ + checkout. Pembayaran di sisi Founder+ — kamu gak nulis kode bayar.</p>
+
+      <h2>5. Funnel toolkit (script ini)</h2>
+      <p>Tempel di akhir <code>&lt;body&gt;</code> halaman jualan mana pun:</p>
+      <pre><code>&lt;script src="https://cdn.founderplus.id/funnel-tracker.js" defer&gt;&lt;/script&gt;</code></pre>
+      <p>Tombol checkout (Founder+ yang proses bayar):</p>
+      <pre><code>&lt;button data-product-slug="ebook-saya" data-product-type="customProduct"&gt;Beli&lt;/button&gt;</code></pre>
+      <p>Countdown urgency:</p>
+      <pre><code>&lt;div data-countdown-evergreen="60"&gt;&lt;/div&gt;   &lt;!-- per-visitor 60 menit --&gt;
+&lt;div data-countdown="2026-06-01T23:59"&gt;&lt;/div&gt;</code></pre>
+      <p>Detail atribut: <a href="https://github.com/founderplus-labs/founderplus-templates">founderplus-templates</a>.</p>
+
+      <div class="foot">
+        Founder+ Academy · <a href="https://academy.founderplus.id">academy.founderplus.id</a> ·
+        CLI: <a href="https://github.com/founderplus-labs/founderplus-cli">founderplus-cli</a> ·
+        Agent-readable: <a href="/llms.txt">/llms.txt</a>
+      </div>
+    </main>
+  </body>
+</html>
