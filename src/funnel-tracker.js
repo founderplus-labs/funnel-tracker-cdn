@@ -82,6 +82,11 @@
     return Object.keys(utm).length > 0 ? utm : null;
   }
 
+  function getCookie(name) {
+    var m = document.cookie.match(new RegExp('(?:^|;\\s*)' + name + '=([^;]+)'));
+    return m ? decodeURIComponent(m[1]) : null;
+  }
+
   function trackAnalytics(eventName, payload, productConfig) {
     if (typeof window.fbq !== 'undefined') {
       window.fbq('track', eventName, {
@@ -164,6 +169,12 @@
       slug: slug || fields.uuid,
       source: 'funnel-landing',
       utm: getStoredUTM(),
+      // Forward Meta browser cookies cross-origin: the _fbp/_fbc set on this
+      // landing origin don't carry to the checkout origin, so the checkout
+      // sends CAPI Purchase without them. Passing them in the payload lets the
+      // checkout (and server CAPI) recover the browser-match signals.
+      fbp: getCookie('_fbp'),
+      fbc: getCookie('_fbc'),
       referrer: document.referrer || null,
       landingPage: window.location.href,
       timestamp: Date.now(),
