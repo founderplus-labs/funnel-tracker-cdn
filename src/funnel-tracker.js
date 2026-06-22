@@ -1,6 +1,7 @@
 /**
- * FounderPlus Funnel Tracker v1.2.0
- * Universal tracking + checkout script: UTM capture, product tracking, analytics.
+ * FounderPlus Funnel Tracker v1.3.0
+ * Universal tracking + checkout + lead-magnet script: UTM capture, product
+ * tracking, lead capture, analytics.
  *
  * Deployed to: https://cdn.founderplus.id/funnel-tracker.js
  * Source of truth: founderplus-commerce-sdk/cdn/funnel-tracker.js
@@ -22,6 +23,17 @@
  *   fetch entirely — no wrong price, no per-page <script> hacks.
  *
  *   data-product-slug is optional in explicit mode (defaults to the uuid).
+ *
+ * Usage (lead magnet — capture email/WA, asset emailed to inbox, no payment):
+ *   <form data-lead-magnet="<asset-uuid>">
+ *     <input name="name"><input name="email" type="email"><input name="phone">
+ *     <select name="umur">…</select><select name="pekerjaan">…</select>
+ *     <select name="stage_bisnis">…</select>
+ *     <input name="website" hidden tabindex="-1">   <!-- honeypot, leave empty -->
+ *     <button type="submit">Daftar</button>
+ *   </form>
+ *   The asset uuid is a public GrapesJsAsset (admin Marketing > Assets, or
+ *   GET /api/dev/newsletter/available-files?category=lead-magnet).
  *
  * Page id (optional, for analytics attribution):
  *   <script src="https://cdn.founderplus.id/funnel-tracker.js" data-project-id="..."></script>
@@ -52,6 +64,8 @@
       customProduct: { id: 6, value: 'customProduct', path: 'products', title: 'Custom Product', responseKey: 'data' },
     },
     UTM_PARAMS: ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'fbclid', 'gclid', 'ttclid'],
+    SUBSCRIBE_PATH: '/newsletter/subscribe',
+    LEAD_UTM_DEFAULTS: { utm_source: 'funnel_landing', utm_medium: 'lead_magnet', utm_campaign: 'lead_magnet' },
   };
 
   // ========== UTILITY FUNCTIONS ==========
@@ -126,7 +140,12 @@
   function showErrorToast(message) {
     const toast = document.createElement('div');
     toast.className = 'funnel-tracker-toast funnel-tracker-error';
-    toast.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><span>' + (message || 'Gagal memuat produk') + '</span>';
+    // SVG markup is static; the message goes in via textContent so a server- or
+    // author-supplied string can never inject HTML on the embedding page.
+    toast.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>';
+    const span = document.createElement('span');
+    span.textContent = message || 'Gagal memuat produk';
+    toast.appendChild(span);
     document.body.appendChild(toast);
     setTimeout(() => toast.remove(), 3000);
   }
@@ -359,6 +378,205 @@
     });
   }
 
+  // ========== LEAD MAGNET ==========
+  // Declarative lead capture: a <form data-lead-magnet="<asset-uuid>"> with
+  // name/email/phone/umur/pekerjaan/stage_bisnis inputs. On submit the tracker
+  // validates (ported from the Founder+ template form), then POSTs to the
+  // newsletter subscribe endpoint, which registers the lead + emails the chosen
+  // asset (GrapesJsAsset by uuid). No payment, no redirect.
+
+  function lmSanitizeName(value) {
+    return (value || '').replace(/[\u200B-\u200D\u2060\uFEFF]/g, '').replace(/\s+/g, ' ').trim();
+  }
+  function lmIsValidName(value) {
+    return /[A-Za-zÀ-ÖØ-öø-ÿ]{2,}/.test(value) && value.length >= 3;
+  }
+  // Normalize to E.164 +62… — the subscribe backend re-normalizes to local 0….
+  function lmNormalizePhone(value) {
+    const digits = (value || '').trim().replace(/\D/g, '');
+    if (digits.startsWith('62')) return '+' + digits;
+    if (digits.startsWith('0')) return '+62' + digits.slice(1);
+    if (digits.startsWith('8')) return '+62' + digits;
+    return value || '';
+  }
+  function lmIsValidPhone(value) {
+    const digits = (value || '').replace(/\D/g, '');
+    return /^62(8\d{7,11})$/.test(digits);
+  }
+
+  function lmShowFieldError(form, field, message) {
+    const slot = form.querySelector('[data-error-for="' + field + '"]');
+    if (slot) {
+      slot.textContent = message;
+      slot.hidden = false;
+      slot.style.display = '';
+    } else {
+      showErrorToast(message);
+    }
+  }
+  function lmClearErrors(form) {
+    const slots = form.querySelectorAll('[data-error-for]');
+    for (let i = 0; i < slots.length; i++) {
+      slots[i].hidden = true;
+      slots[i].style.display = 'none';
+    }
+  }
+  // Status slot if the author provides one (<div data-lm-status>), else a toast.
+  function lmShowStatus(form, message, isError) {
+    const slot = form.querySelector('[data-lm-status]');
+    if (slot) {
+      slot.textContent = message;
+      slot.hidden = false;
+      slot.style.display = '';
+      slot.setAttribute('data-lm-status-state', isError ? 'error' : 'success');
+      return;
+    }
+    if (isError) {
+      showErrorToast(message);
+      return;
+    }
+    const toast = document.createElement('div');
+    toast.className = 'funnel-tracker-toast';
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 5000);
+  }
+
+  // Flat top-level UTM keys (the subscribe contract), reusing the captured UTM
+  // plus lead defaults. landing_page must be a valid URL — location.href is.
+  function lmBuildUTM(form, assetUuid) {
+    const stored = getStoredUTM() || {};
+    const d = CONFIG.LEAD_UTM_DEFAULTS;
+    return {
+      utm_source: stored.utm_source || form.getAttribute('data-lm-source') || d.utm_source,
+      utm_medium: stored.utm_medium || d.utm_medium,
+      utm_campaign: stored.utm_campaign || d.utm_campaign,
+      utm_content: stored.utm_content || assetUuid || '',
+      utm_term: stored.utm_term || '',
+      landing_page: window.location.href,
+    };
+  }
+
+  function lmTrackLead(assetUuid, category) {
+    if (typeof window.fbq !== 'undefined') {
+      window.fbq('track', 'Lead', { content_name: assetUuid, content_category: category });
+    }
+    if (typeof window.gtag !== 'undefined') {
+      window.gtag('event', 'generate_lead', { event_category: 'lead_magnet', event_label: assetUuid });
+    }
+  }
+
+  async function handleLeadMagnetSubmit(e, form) {
+    e.preventDefault();
+    lmClearErrors(form);
+
+    const fd = new FormData(form);
+    if (fd.get('website')) return; // honeypot tripped → silently drop (bot)
+
+    const assetUuid = form.getAttribute('data-lead-magnet') || '';
+    const category = form.getAttribute('data-lm-category') || 'lead-magnet';
+
+    const name = lmSanitizeName(fd.get('name'));
+    const email = (fd.get('email') || '').toString().trim();
+    const phone = lmNormalizePhone(fd.get('phone'));
+    const umur = fd.get('umur');
+    const pekerjaan = fd.get('pekerjaan');
+    const stageBisnis = fd.get('stage_bisnis');
+
+    if (!lmIsValidName(name)) return lmShowFieldError(form, 'name', 'Nama tidak valid. Minimal 3 karakter dan hanya huruf.');
+    if (!email || email.indexOf('@') === -1) return lmShowFieldError(form, 'email', 'Email tidak valid.');
+    if (!lmIsValidPhone(phone)) return lmShowFieldError(form, 'phone', 'Nomor WhatsApp tidak valid. Gunakan format 08xxx atau +628xxx.');
+    if (!umur) return lmShowFieldError(form, 'umur', 'Silakan pilih range umur.');
+    if (!pekerjaan) return lmShowFieldError(form, 'pekerjaan', 'Silakan pilih pekerjaan.');
+    if (!stageBisnis) return lmShowFieldError(form, 'stage_bisnis', 'Silakan pilih stage bisnis.');
+
+    const payload = Object.assign({
+      name: name,
+      email: email,
+      phone: phone,
+      umur: umur,
+      pekerjaan: pekerjaan,
+      stage_bisnis: stageBisnis,
+      // Approach A (lead-owned ProfileMember) reads camelCase `stageBisnis` for
+      // the business-stage field, so send both spellings.
+      stageBisnis: stageBisnis,
+      selected_file_uuid: assetUuid,
+      selected_file_category: category,
+      fbp: getCookie('_fbp'),
+      fbc: getCookie('_fbc'),
+      referrer: document.referrer || null,
+    }, lmBuildUTM(form, assetUuid));
+
+    const btn = form.querySelector('button[type="submit"], [type="submit"]');
+    const originalBtnHTML = btn ? btn.innerHTML : null;
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = 'Memproses...';
+    }
+
+    const SUCCESS_MSG = 'Berhasil! Silakan CEK EMAIL Anda — link download sudah dikirim ke inbox.';
+    const onSuccess = function (msg) {
+      lmShowStatus(form, msg || SUCCESS_MSG, false);
+      lmTrackLead(assetUuid, category);
+      setTimeout(() => form.reset(), 3000);
+    };
+
+    try {
+      const res = await fetch(CONFIG.API_BASE_URL + CONFIG.SUBSCRIBE_PATH, {
+        method: 'POST',
+        mode: 'cors',
+        credentials: 'omit',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      // Any 2xx (incl. 204 honeypot / already-subscribed 200) → asset emailed.
+      if (res.ok) {
+        onSuccess();
+        return;
+      }
+
+      // 422/500 — surface the server message; "already registered" is a soft
+      // success (the download link was already emailed previously).
+      let msg = 'Terjadi kesalahan saat mengirim data.';
+      try {
+        const r = await res.json();
+        msg = r.message || msg;
+      } catch (_) { /* non-JSON error body */ }
+      if (/terdaftar|sudah|registered|already/i.test(msg)) {
+        onSuccess('Email sudah terdaftar. Silakan CEK EMAIL Anda — link download sudah dikirim ke inbox.');
+        return;
+      }
+      lmShowStatus(form, msg, true);
+    } catch (err) {
+      // Opaque cross-origin / "Failed to fetch": the row was likely created, so
+      // treat as success rather than show a false error.
+      if (err instanceof TypeError) {
+        onSuccess();
+      } else {
+        lmShowStatus(form, 'Terjadi kesalahan. Silakan coba lagi.', true);
+      }
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        if (originalBtnHTML != null) btn.innerHTML = originalBtnHTML;
+      }
+    }
+  }
+
+  function attachLeadMagnetHandlers() {
+    const forms = document.querySelectorAll('form[data-lead-magnet]');
+    forms.forEach((form) => {
+      if (form.getAttribute('data-ft-lm-integrated') === 'true') return;
+      form.setAttribute('data-ft-lm-integrated', 'true');
+      form.addEventListener('submit', (e) => handleLeadMagnetSubmit(e, form));
+    });
+  }
+
   // ════════════════════════════════════════════════════════════════════
   // OPTIONAL WIDGETS — all opt-in via data-attributes. If the attribute is
   // absent, the initializer finds nothing and does zero work. No widget runs
@@ -490,6 +708,7 @@
 
   function scan() {
     attachProductHandlers();
+    try { attachLeadMagnetHandlers(); } catch (_) {}
     initWidgets();
   }
 
@@ -509,11 +728,11 @@
     }
     // Back from checkout via bfcache → clear any frozen loading state.
     window.addEventListener('pageshow', (e) => { if (e.persisted) resetLoadingUI(); });
-    console.log('[FunnelTracker] v1.2.0 initialized');
+    console.log('[FunnelTracker] v1.3.0 initialized');
   }
 
   window.FunnelTracker = {
-    version: '1.2.0',
+    version: '1.3.0',
     config: CONFIG,
     saveUTM: saveUTMParameters,
     getUTM: getStoredUTM,
