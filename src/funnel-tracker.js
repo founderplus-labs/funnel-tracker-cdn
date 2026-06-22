@@ -392,16 +392,31 @@
     return /[A-Za-zÀ-ÖØ-öø-ÿ]{2,}/.test(value) && value.length >= 3;
   }
   // Normalize to E.164 +62… — the subscribe backend re-normalizes to local 0….
+  // Forgiving of every real Indonesian entry variation: handles 0…, 62…, 8…,
+  // the intl dial-out 00 62…, AND the very common double-prefix mistake where a
+  // user types BOTH 62 and the leading 0 (e.g. "+62 0 812…" or "62 08123…").
+  // Reachability is NOT decided here — lmIsValidPhone is the single source of truth.
   function lmNormalizePhone(value) {
-    const digits = (value || '').trim().replace(/\D/g, '');
-    if (digits.startsWith('62')) return '+' + digits;
-    if (digits.startsWith('0')) return '+62' + digits.slice(1);
-    if (digits.startsWith('8')) return '+62' + digits;
-    return value || '';
+    let d = (value || '').replace(/\D/g, '');
+    if (!d) return '';
+    if (d.startsWith('00')) d = d.slice(2);        // intl dial-out 0062…
+    if (d.startsWith('62')) {
+      d = d.slice(2).replace(/^0+/, '');           // drop country code + any stray leading 0(s)
+    } else if (d.startsWith('0')) {
+      d = d.replace(/^0+/, '');                     // local 0…  → strip leading 0(s)
+    }
+    return '+62' + d;                              // bare 8…, or already-stripped, falls through
   }
+  // Valid Indonesian mobile: +62, then 8, then 8–11 more digits.
+  // = NSN of 9–12 digits = local 08xx of 10–13 digits, covering every real prefix
+  // (Telkomsel/Indosat/XL/Axis/Smartfren/Three). Requiring the leading 8 rejects
+  // genuinely-unreachable numbers like the user's 62423… (4 after 62 = non-mobile).
+  // The 8-digit floor also fixes the old regex leaking too-short 9-digit numbers
+  // the backend would silently drop. Empty → '' → false (also caught upstream by
+  // the phone-required check).
   function lmIsValidPhone(value) {
-    const digits = (value || '').replace(/\D/g, '');
-    return /^62(8\d{7,11})$/.test(digits);
+    const d = (value || '').replace(/\D/g, '');
+    return /^628\d{8,11}$/.test(d);
   }
 
   function lmShowFieldError(form, field, message) {
@@ -483,9 +498,9 @@
     const pekerjaan = fd.get('pekerjaan');
     const stageBisnis = fd.get('stage_bisnis');
 
-    if (!lmIsValidName(name)) return lmShowFieldError(form, 'name', 'Nama tidak valid. Minimal 3 karakter dan hanya huruf.');
-    if (!email || email.indexOf('@') === -1) return lmShowFieldError(form, 'email', 'Email tidak valid.');
-    if (!lmIsValidPhone(phone)) return lmShowFieldError(form, 'phone', 'Nomor WhatsApp tidak valid. Gunakan format 08xxx atau +628xxx.');
+    if (!lmIsValidName(name)) return lmShowFieldError(form, 'name', 'Tulis nama lengkap Anda, minimal 3 huruf.');
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return lmShowFieldError(form, 'email', 'Sepertinya format email ini kurang tepat. Contoh: nama@email.com.');
+    if (!lmIsValidPhone(phone)) return lmShowFieldError(form, 'phone', 'Nomor WhatsApp Indonesia harus diawali 08 (atau +62 8). Contoh: 0812 3456 7890.');
     if (!umur) return lmShowFieldError(form, 'umur', 'Silakan pilih range umur.');
     if (!pekerjaan) return lmShowFieldError(form, 'pekerjaan', 'Silakan pilih pekerjaan.');
     if (!stageBisnis) return lmShowFieldError(form, 'stage_bisnis', 'Silakan pilih stage bisnis.');
