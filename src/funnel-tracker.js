@@ -1,5 +1,5 @@
 /**
- * FounderPlus Funnel Tracker v1.3.0
+ * FounderPlus Funnel Tracker v1.5.0
  * Universal tracking + checkout + lead-magnet script: UTM capture, product
  * tracking, lead capture, analytics.
  *
@@ -63,9 +63,16 @@
       mentoring: { id: 5, value: 'mentoring', path: 'mentorings', title: 'Mentoring', responseKey: 'data' },
       customProduct: { id: 6, value: 'customProduct', path: 'products', title: 'Custom Product', responseKey: 'data' },
     },
-    UTM_PARAMS: ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'fbclid', 'gclid', 'ttclid'],
+    UTM_PARAMS: ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'fbclid', 'gclid', 'ttclid', 'msclkid'],
+    CLICK_ID_PARAMS: ['fbclid', 'gclid', 'ttclid', 'msclkid'],
     SUBSCRIBE_PATH: '/newsletter/subscribe',
     LEAD_UTM_DEFAULTS: { utm_source: 'funnel_landing', utm_medium: 'lead_magnet', utm_campaign: 'lead_magnet' },
+    // Durable first-touch attribution cookie. Replaces the old per-origin
+    // sessionStorage which died on tab/session close (delayed + new-tab + cross-
+    // origin conversions lost their source → bucketed to "Other"). A cookie on the
+    // .founderplus.id apex survives those and carries to academy.founderplus.id.
+    ATTR_COOKIE: 'ft_attribution',
+    ATTR_MAX_AGE: 2592000, // 30 days
   };
 
   // ========== UTILITY FUNCTIONS ==========
@@ -79,21 +86,91 @@
     return script ? script.getAttribute('data-page-slug') : window.location.pathname.split('/').filter(Boolean).pop();
   }
 
-  function saveUTMParameters() {
-    const urlParams = new URLSearchParams(window.location.search);
-    CONFIG.UTM_PARAMS.forEach((param) => {
-      const value = urlParams.get(param);
-      if (value) sessionStorage.setItem(param, value);
-    });
+  function setCookie(name, value, maxAgeSec) {
+    var domain = '';
+    try {
+      if (/(^|\.)founderplus\.id$/.test(window.location.hostname)) domain = '; domain=.founderplus.id';
+    } catch (_) {}
+    document.cookie = name + '=' + encodeURIComponent(value) +
+      '; max-age=' + maxAgeSec + '; path=/; SameSite=Lax' + domain;
   }
 
-  function getStoredUTM() {
-    const utm = {};
+  function safeParse(s) { try { return JSON.parse(s); } catch (_) { return null; } }
+
+  // ---- Durable attribution storage (belt-and-suspenders) ----
+  // Write to BOTH a cookie (carries across the .founderplus.id apex → academy,
+  // survives tab close) AND localStorage (durable per-origin backup, survives
+  // even if the cookie is cleared). Reads pick the record with the newer
+  // last-touch and self-heal the other store. Record shape:
+  //   { first: <touch>, last: <touch> }  where <touch> = utm/click-ids + landing_page + referrer + ts
+  function readAttrRaw() {
+    const fromCookie = getCookie(CONFIG.ATTR_COOKIE);
+    let fromLS = null;
+    try { fromLS = window.localStorage.getItem(CONFIG.ATTR_COOKIE); } catch (_) {}
+    const a = fromCookie ? safeParse(fromCookie) : null;
+    const b = fromLS ? safeParse(fromLS) : null;
+    let chosen = a;
+    if (b && (!a || ((b.last && b.last.ts) || 0) > ((a.last && a.last.ts) || 0))) chosen = b;
+    return chosen;
+  }
+
+  function writeAttr(record) {
+    const json = JSON.stringify(record);
+    try { setCookie(CONFIG.ATTR_COOKIE, json, CONFIG.ATTR_MAX_AGE); } catch (_) {}
+    try { window.localStorage.setItem(CONFIG.ATTR_COOKIE, json); } catch (_) {}
+  }
+
+  function currentTouch() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const touch = { landing_page: window.location.href, referrer: document.referrer || null, ts: Date.now() };
+    let hasUTM = false;
     CONFIG.UTM_PARAMS.forEach((param) => {
-      const value = sessionStorage.getItem(param);
-      if (value) utm[param] = value;
+      const value = urlParams.get(param);
+      if (value) { touch[param] = value; hasUTM = true; try { sessionStorage.setItem(param, value); } catch (_) {} }
     });
+    return { touch, hasUTM };
+  }
+
+  // first-touch is LOCKED (original source credit); last-touch is REPLACED whenever
+  // a new campaign / click-id URL arrives. Internal navigation changes nothing.
+  function saveUTMParameters() {
+    const cur = currentTouch();
+    let record = readAttrRaw();
+    if (!record || !record.first) {
+      record = { first: cur.touch, last: cur.touch };
+    } else if (cur.hasUTM) {
+      record.last = cur.touch;
+    } else {
+      // Re-heal stores even on internal nav so cookie+LS stay in sync.
+      writeAttr(record);
+      return;
+    }
+    writeAttr(record);
+  }
+
+  function utmFromTouch(touch) {
+    if (!touch) return null;
+    const utm = {};
+    CONFIG.UTM_PARAMS.forEach((param) => { if (touch[param]) utm[param] = touch[param]; });
     return Object.keys(utm).length > 0 ? utm : null;
+  }
+
+  // Returns { first, last } (or a legacy-flattened equivalent) or null.
+  function getStoredAttribution() {
+    const record = readAttrRaw();
+    if (record && record.last) return record;
+    // Legacy fallback: flat sessionStorage from older script versions.
+    const legacy = {};
+    CONFIG.UTM_PARAMS.forEach((param) => {
+      try { const v = sessionStorage.getItem(param); if (v) legacy[param] = v; } catch (_) {}
+    });
+    return Object.keys(legacy).length ? { first: legacy, last: legacy } : null;
+  }
+
+  // Last-touch UTM drives channel attribution (existing payload shape).
+  function getStoredUTM() {
+    const record = getStoredAttribution();
+    return record ? utmFromTouch(record.last) : null;
   }
 
   function getCookie(name) {
@@ -180,6 +257,9 @@
   }
 
   function buildPayload(fields, productConfig, slug) {
+    const attr = getStoredAttribution() || {};
+    const first = attr.first || {};
+    const last = attr.last || {};
     return {
       uuid: fields.uuid,
       title: fields.title,
@@ -187,15 +267,18 @@
       productType: { id: productConfig.id, value: productConfig.value, title: productConfig.title },
       slug: slug || fields.uuid,
       source: 'funnel-landing',
-      utm: getStoredUTM(),
+      // Last-touch drives channel attribution; first-touch is kept for original-
+      // source credit so a later touch can't erase where the user really came from.
+      utm: utmFromTouch(last),
+      utmFirst: utmFromTouch(first),
       // Forward Meta browser cookies cross-origin: the _fbp/_fbc set on this
       // landing origin don't carry to the checkout origin, so the checkout
       // sends CAPI Purchase without them. Passing them in the payload lets the
       // checkout (and server CAPI) recover the browser-match signals.
       fbp: getCookie('_fbp'),
       fbc: getCookie('_fbc'),
-      referrer: document.referrer || null,
-      landingPage: window.location.href,
+      referrer: last.referrer || document.referrer || null,
+      landingPage: first.landing_page || window.location.href,
       timestamp: Date.now(),
     };
   }
@@ -460,16 +543,25 @@
   // Flat top-level UTM keys (the subscribe contract), reusing the captured UTM
   // plus lead defaults. landing_page must be a valid URL — location.href is.
   function lmBuildUTM(form, assetUuid) {
-    const stored = getStoredUTM() || {};
+    const attr = getStoredAttribution() || {};
+    const last = attr.last || {};
+    const first = attr.first || {};
     const d = CONFIG.LEAD_UTM_DEFAULTS;
-    return {
-      utm_source: stored.utm_source || form.getAttribute('data-lm-source') || d.utm_source,
-      utm_medium: stored.utm_medium || d.utm_medium,
-      utm_campaign: stored.utm_campaign || d.utm_campaign,
-      utm_content: stored.utm_content || assetUuid || '',
-      utm_term: stored.utm_term || '',
-      landing_page: window.location.href,
+    const out = {
+      utm_source: last.utm_source || form.getAttribute('data-lm-source') || d.utm_source,
+      utm_medium: last.utm_medium || d.utm_medium,
+      utm_campaign: last.utm_campaign || d.utm_campaign,
+      utm_content: last.utm_content || assetUuid || '',
+      utm_term: last.utm_term || '',
+      landing_page: first.landing_page || window.location.href,
     };
+    // Forward paid click IDs (Meta/Google/TikTok/Bing) so paid leads keep attribution.
+    CONFIG.CLICK_ID_PARAMS.forEach((k) => { if (last[k]) out[k] = last[k]; });
+    // First-touch original source (preserved even after a later last-touch).
+    if (first.utm_source) out.first_utm_source = first.utm_source;
+    if (first.utm_medium) out.first_utm_medium = first.utm_medium;
+    if (first.utm_campaign) out.first_utm_campaign = first.utm_campaign;
+    return out;
   }
 
   function lmTrackLead(assetUuid, category) {
@@ -519,7 +611,7 @@
       selected_file_category: category,
       fbp: getCookie('_fbp'),
       fbc: getCookie('_fbc'),
-      referrer: document.referrer || null,
+      referrer: ((getStoredAttribution() || {}).last || {}).referrer || document.referrer || null,
     }, lmBuildUTM(form, assetUuid));
 
     const btn = form.querySelector('button[type="submit"], [type="submit"]');
@@ -743,11 +835,11 @@
     }
     // Back from checkout via bfcache → clear any frozen loading state.
     window.addEventListener('pageshow', (e) => { if (e.persisted) resetLoadingUI(); });
-    console.log('[FunnelTracker] v1.3.0 initialized');
+    console.log('[FunnelTracker] v1.5.0 initialized');
   }
 
   window.FunnelTracker = {
-    version: '1.3.0',
+    version: '1.5.0',
     config: CONFIG,
     saveUTM: saveUTMParameters,
     getUTM: getStoredUTM,
