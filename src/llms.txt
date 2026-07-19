@@ -81,6 +81,10 @@ fp coupons | tx | customers | analytics | microsite | sites | wallet
 <div data-countdown="2026-06-01T23:59"></div>      # fixed deadline
 # Sticky buy bar:
 <button data-sticky-cta data-product-slug="<slug>" data-product-type="customProduct">Beli</button>
+# Theming (owner's brand colors). Either data-ft-* on the <script>, or override CSS vars in your stylesheet:
+<script src="https://cdn.founderplus.id/funnel-tracker.js" defer data-ft-accent="#ff6600" data-ft-radius="12"></script>
+# CSS vars: --ft-accent --ft-accent-text --ft-radius --ft-sticky-bg --ft-toast-bg --ft-toast-text --ft-error-bg --ft-brand-text
+# NOTE: the "Powered by Founder+" badge on the sticky bar is always injected and cannot be removed (recolor only, via --ft-brand-text).
 
 ## Links
 Academy: https://academy.founderplus.id

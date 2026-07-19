@@ -1,5 +1,5 @@
 /**
- * FounderPlus Funnel Tracker v1.5.0
+ * FounderPlus Funnel Tracker v1.6.0
  * Universal tracking + checkout + lead-magnet script: UTM capture, product
  * tracking, lead capture, analytics.
  *
@@ -788,6 +788,16 @@
       if (v != null) clone.setAttribute(a, v);
     });
     bar.appendChild(clone);
+    // Mandatory Founder+ attribution. The rest of the bar is fully themeable,
+    // but this badge is always injected and always links back — it's the
+    // condition for using the toolkit. Owners may recolor it via --ft-brand-text.
+    const brand = document.createElement('a');
+    brand.className = 'ft-sticky-brand';
+    brand.href = 'https://founderplus.id/?utm_source=funnel_toolkit&utm_medium=powered_by&utm_campaign=sticky_cta';
+    brand.target = '_blank';
+    brand.rel = 'noopener';
+    brand.textContent = '⚡ Powered by Founder+';
+    bar.appendChild(brand);
     document.body.appendChild(bar);
     attachProductHandlers(); // wire the cloned button
 
@@ -805,12 +815,47 @@
     try { initStickyCTA(); } catch (_) {}
   }
 
+  // Theme tokens are CSS custom properties, so a funnel owner can make every
+  // component "theirs" with plain CSS — e.g. `:root{--ft-accent:#ff6600}` — or,
+  // for non-coders, via data-ft-* attributes on the <script> tag (applyTheme).
+  // The one thing they can't restyle away is the Powered by Founder+ badge:
+  // that's injected in initStickyCTA and stays regardless of theme.
   function injectStyles() {
     if (document.getElementById('funnel-tracker-styles')) return;
     const style = document.createElement('style');
     style.id = 'funnel-tracker-styles';
-    style.textContent = '.funnel-tracker-toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1a1a1a;color:#fff;padding:14px 24px;border-radius:12px;font-size:14px;font-weight:500;display:flex;align-items:center;gap:10px;box-shadow:0 8px 32px rgba(0,0,0,0.3);z-index:99999;animation:funnelTrackerSlideUp 0.3s ease-out}.funnel-tracker-toast.funnel-tracker-error{background:#dc2626}.funnel-tracker-spinner{animation:funnelTrackerSpin 1s linear infinite}@keyframes funnelTrackerSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}@keyframes funnelTrackerSlideUp{from{opacity:0;transform:translateX(-50%) translateY(20px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}.ft-sticky-cta{position:fixed;left:0;right:0;bottom:0;z-index:99998;padding:12px 16px;background:#fff;box-shadow:0 -4px 24px rgba(0,0,0,0.12);transform:translateY(120%);transition:transform .25s ease-out;display:flex;justify-content:center}.ft-sticky-cta-show{transform:translateY(0)}.ft-sticky-cta-btn{width:100%;max-width:480px;padding:14px 20px;background:#7f2dbf;color:#fff;border:none;border-radius:14px;font-size:16px;font-weight:600;cursor:pointer}';
+    style.textContent = ':root{--ft-accent:#7f2dbf;--ft-accent-text:#fff;--ft-radius:14px;--ft-sticky-bg:#fff;--ft-toast-bg:#1a1a1a;--ft-toast-text:#fff;--ft-error-bg:#dc2626;--ft-brand-text:#8a8397}.funnel-tracker-toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--ft-toast-bg);color:var(--ft-toast-text);padding:14px 24px;border-radius:12px;font-size:14px;font-weight:500;display:flex;align-items:center;gap:10px;box-shadow:0 8px 32px rgba(0,0,0,0.3);z-index:99999;animation:funnelTrackerSlideUp 0.3s ease-out}.funnel-tracker-toast.funnel-tracker-error{background:var(--ft-error-bg);color:#fff}.funnel-tracker-spinner{animation:funnelTrackerSpin 1s linear infinite}@keyframes funnelTrackerSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}@keyframes funnelTrackerSlideUp{from{opacity:0;transform:translateX(-50%) translateY(20px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}.ft-sticky-cta{position:fixed;left:0;right:0;bottom:0;z-index:99998;padding:12px 16px;background:var(--ft-sticky-bg);box-shadow:0 -4px 24px rgba(0,0,0,0.12);transform:translateY(120%);transition:transform .25s ease-out;display:flex;flex-direction:column;align-items:center;gap:6px}.ft-sticky-cta-show{transform:translateY(0)}.ft-sticky-cta-btn{width:100%;max-width:480px;padding:14px 20px;background:var(--ft-accent);color:var(--ft-accent-text);border:none;border-radius:var(--ft-radius);font-size:16px;font-weight:600;cursor:pointer}.ft-sticky-brand{font-size:11px;line-height:1;color:var(--ft-brand-text);text-decoration:none;font-weight:600;letter-spacing:.02em;opacity:.85}.ft-sticky-brand:hover{opacity:1}';
     document.head.appendChild(style);
+  }
+
+  // Convenience layer over the CSS variables above: read data-ft-* off the
+  // <script> tag and set the matching custom property on :root. setProperty is
+  // an API (not string concatenation), so an author value can never break out
+  // of the declaration; the regex just rejects obviously-bad input early.
+  function applyTheme() {
+    const script = document.currentScript ||
+      document.querySelector('script[data-project-id]') ||
+      document.querySelector('script[src*="funnel-tracker"]');
+    if (!script) return;
+    const map = {
+      'data-ft-accent': '--ft-accent',
+      'data-ft-accent-text': '--ft-accent-text',
+      'data-ft-radius': '--ft-radius',
+      'data-ft-sticky-bg': '--ft-sticky-bg',
+      'data-ft-toast-bg': '--ft-toast-bg',
+      'data-ft-toast-text': '--ft-toast-text',
+      'data-ft-error-bg': '--ft-error-bg',
+      'data-ft-brand-text': '--ft-brand-text',
+    };
+    const root = document.documentElement;
+    Object.keys(map).forEach(function (attr) {
+      let v = script.getAttribute(attr);
+      if (v == null || v === '') return;
+      v = v.trim();
+      if (attr === 'data-ft-radius' && /^\d+$/.test(v)) v = v + 'px'; // bare number → px
+      if (!/^[#a-zA-Z0-9(),.%\s-]+$/.test(v)) return;
+      root.style.setProperty(map[attr], v);
+    });
   }
 
   function scan() {
@@ -822,6 +867,7 @@
   function init() {
     saveUTMParameters();
     injectStyles();
+    applyTheme();
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', scan);
     } else {
@@ -835,11 +881,11 @@
     }
     // Back from checkout via bfcache → clear any frozen loading state.
     window.addEventListener('pageshow', (e) => { if (e.persisted) resetLoadingUI(); });
-    console.log('[FunnelTracker] v1.5.0 initialized');
+    console.log('[FunnelTracker] v1.6.0 initialized');
   }
 
   window.FunnelTracker = {
-    version: '1.5.0',
+    version: '1.6.0',
     config: CONFIG,
     saveUTM: saveUTMParameters,
     getUTM: getStoredUTM,

@@ -60,6 +60,35 @@ UTM dari iklan/media sosial tercatat dan ikut sampai ke checkout — kamu tahu c
 ### 🤖 Cocok dipakai bareng AI agent
 Buka file [`/llms.txt`](https://cdn.founderplus.id/llms.txt) dari Claude/ChatGPT/Cursor — agent kamu langsung tahu cara membantu kamu pakai Founder+ dengan benar (install CLI, ambil slug produk, taruh tombol beli yang tidak salah). Tidak ada lagi tebak-tebakan yang bikin tombol error.
 
+### 🎨 Warna & tampilan jadi milikmu
+Komponen UI yang muncul dari toolkit ini — **tombol sticky CTA**, **toast** loading/error, dan **spinner** — bisa kamu warnai sesuai brand-mu. Dua cara:
+
+**Cara cepat (tanpa CSS)** — tambah atribut di tag `<script>`:
+
+```html
+<script src="https://cdn.founderplus.id/funnel-tracker.js" defer
+        data-ft-accent="#ff6600"
+        data-ft-accent-text="#fff"
+        data-ft-radius="12"></script>
+```
+
+**Cara bebas (pakai CSS-mu sendiri)** — timpa CSS variable-nya di stylesheet-mu:
+
+```css
+:root {
+  --ft-accent: #ff6600;       /* warna tombol beli */
+  --ft-accent-text: #fff;     /* teks tombol */
+  --ft-radius: 12px;          /* lengkung sudut */
+  --ft-sticky-bg: #fff;       /* latar bar sticky */
+  --ft-toast-bg: #1a1a1a;     /* latar toast */
+  --ft-brand-text: #8a8397;   /* warna badge brand */
+}
+```
+
+Variabel yang tersedia: `--ft-accent`, `--ft-accent-text`, `--ft-radius`, `--ft-sticky-bg`, `--ft-toast-bg`, `--ft-toast-text`, `--ft-error-bg`, `--ft-brand-text`.
+
+> **Satu syarat:** badge kecil **⚡ Powered by Founder+** selalu tampil di bar sticky dan tautannya balik ke Founder+. Kamu bebas mengatur warnanya (`--ft-brand-text`), tapi badge-nya bagian dari kesepakatan pakai toolkit ini — itu yang bikin semua fitur di atas gratis buat kamu.
+
 ---
 
 ## Mulai dari mana?
