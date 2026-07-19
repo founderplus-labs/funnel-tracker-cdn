@@ -33,7 +33,7 @@ CRITICAL — never guess a product slug. A wrong slug makes the buy button fail
 product "Photobooth" is usually `photobooth-<8hexuuid>`, not `photobooth`.
 Verify before shipping a button:
   fp products list                                              # real slugs
-  curl -s https://academy.founderplus.id/api/dev/products/<slug>  # must be 200, not 404
+  curl -s https://api.founderplus.id/products/<slug>  # must be 200, not 404
 For a learning program's early-bird tier use data-prefer="subscription" (the
 plain learning-program slug returns the full bundle price, not early-bird).
 

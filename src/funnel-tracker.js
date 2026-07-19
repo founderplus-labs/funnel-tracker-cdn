@@ -33,7 +33,7 @@
  *     <button type="submit">Daftar</button>
  *   </form>
  *   The asset uuid is a public GrapesJsAsset (admin Marketing > Assets, or
- *   GET /api/dev/newsletter/available-files?category=lead-magnet).
+ *   GET https://api.founderplus.id/newsletter/available-files?category=lead-magnet).
  *
  * Page id (optional, for analytics attribution):
  *   <script src="https://cdn.founderplus.id/funnel-tracker.js" data-project-id="..."></script>
@@ -54,7 +54,16 @@
   // ========== CONFIGURATION ==========
   const CONFIG = {
     ACADEMY_URL: 'https://academy.founderplus.id',
-    API_BASE_URL: 'https://academy.founderplus.id/api/dev',
+    // API host. Defaults to production (api.founderplus.id). Point a dev/staging
+    // landing page at the ops stack with data-api-base on the script tag, e.g.
+    //   <script src="…/funnel-tracker.js" data-api-base="https://ops.founderplus.id">
+    // Mirrors the fp CLI / desktop / mobile env model (prod api.founderplus.id,
+    // dev ops.founderplus.id). Resolved from document.currentScript at load.
+    API_BASE_URL: (function () {
+      const s = document.currentScript || document.querySelector('script[data-api-base]');
+      const override = s && s.getAttribute('data-api-base');
+      return (override || 'https://api.founderplus.id').replace(/\/+$/, '');
+    })(),
     PRODUCT_TYPES: {
       course: { id: 0, value: 'course', path: 'courses', title: 'Course', responseKey: 'payload' },
       event: { id: 1, value: 'event', path: 'events', title: 'Event', responseKey: 'data' },
